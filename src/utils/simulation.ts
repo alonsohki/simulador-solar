@@ -267,9 +267,7 @@ export async function runSimulation(
     batteryId: battery?.id ?? null,
     batteryName: battery?.name ?? 'Sin batería',
     installationId: installation.id!,
-    // Subtract any unspent VB balance: those are credits earned this year that will
-    // offset future bills, so they reduce the effective annual cost.
-    totalAnnualCost: bill.total - virtualBatteryBalance,
+    totalAnnualCost: bill.total,
     totalConsumption,
     totalSolarProduction,
     totalGridPurchase,
