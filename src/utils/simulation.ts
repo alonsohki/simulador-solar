@@ -212,40 +212,55 @@ export async function runSimulation(
     monthlyMap.get(month)!.push(hr);
   }
 
-  // Process months in order, carrying virtual battery balance forward
   const sortedMonths = [...monthlyMap.keys()].sort();
-  let virtualBatteryBalance = 0;
-  const monthlyBreakdown: MonthlyBreakdown[] = [];
-  for (const month of sortedMonths) {
-    const hours = monthlyMap.get(month)!;
-    const monthBill = calculateBill(hours, offer, virtualBatteryBalance);
-    virtualBatteryBalance = monthBill.newVirtualBatteryBalance;
 
-    const consumptionKwh = hours.reduce((s, h) => s + h.consumption, 0);
-    const solarKwh = hours.reduce((s, h) => s + h.solarProduction, 0);
-    const gridPurchaseKwh = hours.reduce((s, h) => s + h.gridPurchase, 0);
-    const gridSurplusKwh = hours.reduce((s, h) => s + h.gridSurplus, 0);
-    const selfConsumed = solarKwh - gridSurplusKwh;
+  // Run a full billing pass starting from a given VB balance, return breakdown + year-end balance.
+  const runBillingPass = (startBalance: number) => {
+    let balance = startBalance;
+    const breakdown: MonthlyBreakdown[] = [];
+    for (const month of sortedMonths) {
+      const hours = monthlyMap.get(month)!;
+      const monthBill = calculateBill(hours, offer, balance);
+      balance = monthBill.newVirtualBatteryBalance;
 
-    monthlyBreakdown.push({
-      month,
-      energyCost: monthBill.energyCost,
-      surplusCompensation: monthBill.surplusCompensation,
-      virtualBatteryDepositedEuros: monthBill.virtualBatteryDepositedEuros,
-      virtualBatteryUsedEuros: monthBill.virtualBatteryUsedEuros,
-      virtualBatteryBalance,
-      virtualBatteryFee: monthBill.virtualBatteryFee,
-      powerTerm: monthBill.powerTerm,
-      meterRental: monthBill.meterRental,
-      electricityTax: monthBill.electricityTax,
-      iva: monthBill.iva,
-      total: monthBill.total,
-      selfConsumptionRatio: consumptionKwh > 0 ? selfConsumed / consumptionKwh : 0,
-      gridPurchaseKwh,
-      gridSurplusKwh,
-      consumptionKwh,
-      solarProductionKwh: solarKwh,
-    });
+      const consumptionKwh = hours.reduce((s, h) => s + h.consumption, 0);
+      const solarKwh = hours.reduce((s, h) => s + h.solarProduction, 0);
+      const gridPurchaseKwh = hours.reduce((s, h) => s + h.gridPurchase, 0);
+      const gridSurplusKwh = hours.reduce((s, h) => s + h.gridSurplus, 0);
+      const selfConsumed = solarKwh - gridSurplusKwh;
+
+      breakdown.push({
+        month,
+        energyCost: monthBill.energyCost,
+        surplusCompensation: monthBill.surplusCompensation,
+        virtualBatteryDepositedEuros: monthBill.virtualBatteryDepositedEuros,
+        virtualBatteryUsedEuros: monthBill.virtualBatteryUsedEuros,
+        virtualBatteryBalance: balance,
+        virtualBatteryFee: monthBill.virtualBatteryFee,
+        powerTerm: monthBill.powerTerm,
+        meterRental: monthBill.meterRental,
+        electricityTax: monthBill.electricityTax,
+        iva: monthBill.iva,
+        total: monthBill.total,
+        selfConsumptionRatio: consumptionKwh > 0 ? selfConsumed / consumptionKwh : 0,
+        gridPurchaseKwh,
+        gridSurplusKwh,
+        consumptionKwh,
+        solarProductionKwh: solarKwh,
+      });
+    }
+    return { breakdown, endBalance: balance };
+  };
+
+  // For VB offers, the year is a cycle: the Dec year-end balance carries into the following Jan.
+  // Iterate the billing pass until the starting balance converges (steady state).
+  let { breakdown: monthlyBreakdown, endBalance: virtualBatteryBalance } = runBillingPass(0);
+  if (offer.hasVirtualBattery) {
+    for (let i = 0; i < 10; i++) {
+      const prev = virtualBatteryBalance;
+      ({ breakdown: monthlyBreakdown, endBalance: virtualBatteryBalance } = runBillingPass(virtualBatteryBalance));
+      if (Math.abs(virtualBatteryBalance - prev) < 0.01) break;
+    }
   }
 
   // Calculate annual bill as sum of monthly bills
