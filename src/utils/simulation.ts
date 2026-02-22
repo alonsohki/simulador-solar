@@ -19,6 +19,9 @@ export interface MonthlyBreakdown {
   electricityTax: number;
   iva: number;
   total: number;
+  /** Steady-state values (2nd billing pass, VB starting from year-end balance of 1st pass) */
+  totalSteadyState?: number;
+  virtualBatteryBalanceSteadyState?: number;
   selfConsumptionRatio: number;
   gridPurchaseKwh: number;
   gridSurplusKwh: number;
@@ -41,6 +44,9 @@ export interface SimulationResult {
   totalSurplusCompensation: number;
   selfConsumptionRatio: number;
   virtualBatteryBalance: number;
+  /** Steady-state equivalents for VB offers (2nd billing pass) */
+  totalAnnualCostSteadyState?: number;
+  virtualBatteryBalanceSteadyState?: number;
   monthlyBreakdown: MonthlyBreakdown[];
   hourlyResults: HourlySimResult[];
 }
@@ -252,21 +258,28 @@ export async function runSimulation(
     return { breakdown, endBalance: balance };
   };
 
-  // For VB offers, the year is a cycle: the Dec year-end balance carries into the following Jan.
-  // Iterate the billing pass until the starting balance converges (steady state).
-  let { breakdown: monthlyBreakdown, endBalance: virtualBatteryBalance } = runBillingPass(0);
+  // Pass 1: realistic first year, starting with zero VB balance.
+  const pass1 = runBillingPass(0);
+  let monthlyBreakdown = pass1.breakdown;
+  const virtualBatteryBalance = pass1.endBalance;
+  let totalAnnualCostSteadyState: number | undefined;
+  let virtualBatteryBalanceSteadyState: number | undefined;
+
   if (offer.hasVirtualBattery) {
-    for (let i = 0; i < 10; i++) {
-      const prev = virtualBatteryBalance;
-      ({ breakdown: monthlyBreakdown, endBalance: virtualBatteryBalance } = runBillingPass(virtualBatteryBalance));
-      if (Math.abs(virtualBatteryBalance - prev) < 0.01) break;
-    }
+    // Pass 2: steady state — year starts with the balance left at end of year 1.
+    const pass2 = runBillingPass(pass1.endBalance);
+    monthlyBreakdown = pass1.breakdown.map((m, i) => ({
+      ...m,
+      totalSteadyState: pass2.breakdown[i].total,
+      virtualBatteryBalanceSteadyState: pass2.breakdown[i].virtualBatteryBalance,
+    }));
+    totalAnnualCostSteadyState = pass2.breakdown.reduce((s, m) => s + m.total, 0);
+    virtualBatteryBalanceSteadyState = pass2.endBalance;
   }
 
-  // Calculate annual bill as sum of monthly bills
   const bill = {
-    total: monthlyBreakdown.reduce((s, m) => s + m.total, 0),
-    surplusCompensation: monthlyBreakdown.reduce((s, m) => s + m.surplusCompensation, 0),
+    total: pass1.breakdown.reduce((s, m) => s + m.total, 0),
+    surplusCompensation: pass1.breakdown.reduce((s, m) => s + m.surplusCompensation, 0),
   };
 
   const totalConsumption = hourlyResults.reduce((s, h) => s + h.consumption, 0);
@@ -290,6 +303,8 @@ export async function runSimulation(
     totalSurplusCompensation: bill.surplusCompensation,
     selfConsumptionRatio: totalConsumption > 0 ? selfConsumed / totalConsumption : 0,
     virtualBatteryBalance,
+    totalAnnualCostSteadyState,
+    virtualBatteryBalanceSteadyState,
     monthlyBreakdown,
     hourlyResults,
   };

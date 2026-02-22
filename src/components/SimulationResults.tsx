@@ -64,8 +64,13 @@ function ResultRow({
             </Typography>
           )}
         </TableCell>
-        <TableCell align="right">
-          <Typography fontWeight={600}>{result.totalAnnualCost.toFixed(2)} €</Typography>
+        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+          <Typography component="span" fontWeight={600}>{result.totalAnnualCost.toFixed(2)} €</Typography>
+          {result.totalAnnualCostSteadyState !== undefined && (
+            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+              ({result.totalAnnualCostSteadyState.toFixed(2)} €)
+            </Typography>
+          )}
         </TableCell>
         <TableCell align="right">{result.totalConsumption.toFixed(0)} kWh</TableCell>
         <TableCell align="right">{result.totalSolarProduction.toFixed(0)} kWh</TableCell>
@@ -81,7 +86,14 @@ function ResultRow({
           />
         </TableCell>
         {showVirtualBattery && (
-          <TableCell align="right">{result.virtualBatteryBalance.toFixed(2)} €</TableCell>
+          <TableCell align="right">
+            {result.virtualBatteryBalance.toFixed(2)} €
+            {result.virtualBatteryBalanceSteadyState !== undefined && (
+              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                ({result.virtualBatteryBalanceSteadyState.toFixed(2)} €)
+              </Typography>
+            )}
+          </TableCell>
         )}
       </TableRow>
       <TableRow>
@@ -102,8 +114,20 @@ function ResultRow({
                       <TableCell align="right">Contador</TableCell>
                       <TableCell align="right">Imp. eléctrico</TableCell>
                       <TableCell align="right">IVA</TableCell>
-                      <TableCell align="right">Total</TableCell>
-                      {hasVirtualBattery && <TableCell align="right">Saldo bat. virtual</TableCell>}
+                      <TableCell align="right">
+                        Total
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                          (2.º año)
+                        </Typography>
+                      </TableCell>
+                      {hasVirtualBattery && (
+                        <TableCell align="right">
+                          Saldo bat. virtual
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                            (2.º año)
+                          </Typography>
+                        </TableCell>
+                      )}
                       <TableCell align="right">Autoconsumo</TableCell>
                     </TableRow>
                   </TableHead>
@@ -119,11 +143,23 @@ function ResultRow({
                         <TableCell align="right">{mb.meterRental.toFixed(2)} €</TableCell>
                         <TableCell align="right">{mb.electricityTax.toFixed(2)} €</TableCell>
                         <TableCell align="right">{mb.iva.toFixed(2)} €</TableCell>
-                        <TableCell align="right">
+                        <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                           <strong>{mb.total.toFixed(2)} €</strong>
+                          {mb.totalSteadyState !== undefined && (
+                            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                              ({mb.totalSteadyState.toFixed(2)} €)
+                            </Typography>
+                          )}
                         </TableCell>
                         {hasVirtualBattery && (
-                          <TableCell align="right">{mb.virtualBatteryBalance.toFixed(2)} €</TableCell>
+                          <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                            {mb.virtualBatteryBalance.toFixed(2)} €
+                            {mb.virtualBatteryBalanceSteadyState !== undefined && (
+                              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                                ({mb.virtualBatteryBalanceSteadyState.toFixed(2)} €)
+                              </Typography>
+                            )}
+                          </TableCell>
                         )}
                         <TableCell align="right">{(mb.selfConsumptionRatio * 100).toFixed(1)}%</TableCell>
                       </TableRow>
@@ -163,7 +199,9 @@ function computePayback(
   );
   if (!baseline) return null;
 
-  const annualSavings = baseline.totalAnnualCost - result.totalAnnualCost;
+  const resultCost = result.totalAnnualCostSteadyState ?? result.totalAnnualCost;
+  const baselineCost = baseline.totalAnnualCostSteadyState ?? baseline.totalAnnualCost;
+  const annualSavings = baselineCost - resultCost;
   if (annualSavings <= 0) return null;
 
   return battery.priceEur / annualSavings;
@@ -200,13 +238,25 @@ export default function SimulationResults({ results, batteries }: Props) {
                   </Typography>
                 )}
               </TableCell>
-              <TableCell align="right">Coste Total</TableCell>
+              <TableCell align="right">
+                Coste Total
+                <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                  (2.º año)
+                </Typography>
+              </TableCell>
               <TableCell align="right">Consumo</TableCell>
               <TableCell align="right">Solar</TableCell>
               <TableCell align="right">Red</TableCell>
               <TableCell align="right">Excedente</TableCell>
               <TableCell align="right">Autoconsumo</TableCell>
-              {anyHasVirtualBattery && <TableCell align="right">Saldo bat. virtual</TableCell>}
+              {anyHasVirtualBattery && (
+                <TableCell align="right">
+                  Saldo bat. virtual
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
+                    (2.º año)
+                  </Typography>
+                </TableCell>
+              )}
             </TableRow>
           </TableHead>
           <TableBody>
