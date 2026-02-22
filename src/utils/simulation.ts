@@ -85,7 +85,13 @@ function buildSolarIndex(installation: SolarInstallation): Record<string, number
       const { month, day, hour, utcHour } = parsePVGISTime(record.time);
       const key = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${String(hour).padStart(2, '0')}`;
       // Shadow calculation uses UTC hour — getSunPosition assumes solar time ≈ UTC for Spain
-      const shadowFactor = calculateShadowFactor(obstacles, utcHour, month, installation.latitude, panelHeight);
+      // Physical height along the tilt axis depends on orientation
+      const isLandscape = group?.panelOrientation === 'landscape';
+      const panelTiltHeightCm = isLandscape ? (group?.panelWidthCm ?? 0) : (group?.panelHeightCm ?? 0);
+      const shadowFactor = calculateShadowFactor(
+        obstacles, utcHour, month, installation.latitude,
+        panelHeight, panelTiltHeightCm / 100, group?.tilt ?? 30,
+      );
       const kwhThisHour = Math.max(0, (record.P / 1000) * peakPowerScale * shadowFactor);
       sums[key] = (sums[key] ?? 0) + kwhThisHour;
       counts[key] = (counts[key] ?? 0) + 1;
@@ -96,25 +102,6 @@ function buildSolarIndex(installation: SolarInstallation): Record<string, number
       groupTotals[key] = (groupTotals[key] ?? 0) + sums[key] / counts[key];
     }
   }
-
-  // DEBUG: log solar index stats
-  const keys = Object.keys(groupTotals);
-  const vals = Object.values(groupTotals);
-  const nonZero = vals.filter((v) => v > 0);
-  const maxVal = Math.max(...vals, 0);
-  const totalDaily = vals.reduce((s, v) => s + v, 0) / (keys.length / 24 || 1);
-  console.log('[SolarIndex]', {
-    totalKeys: keys.length,
-    nonZeroKeys: nonZero.length,
-    maxKwh: maxVal.toFixed(3),
-    avgDailyKwh: totalDaily.toFixed(1),
-    sampleKeys: keys.slice(0, 5),
-    groups: installation.pvgisData?.map((g) => ({
-      name: g.groupName,
-      records: g.hourlyData.length,
-      matchesPanel: !!installation.panelGroups.find((p) => p.name === g.groupName),
-    })),
-  });
 
   return groupTotals;
 }
@@ -138,6 +125,7 @@ export async function runSimulation(
   energyPriceResolver: EnergyPriceResolver,
 ): Promise<SimulationResult> {
   const solarIndex = buildSolarIndex(installation);
+  console.log(solarIndex);
   const hourlyResults: HourlySimResult[] = [];
 
   let batteryLevel = 0;

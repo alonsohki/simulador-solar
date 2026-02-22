@@ -7,17 +7,35 @@ export interface Obstacle {
   type: 'solid' | 'transparent';
   transparencyPercent?: number;
   height: number;
-  direction: ObstacleDirection;
+  /** Center azimuth in degrees, 0-359°, measured clockwise from North. */
+  azimuthDeg: number;
+  /** Physical width of the obstacle in meters. */
+  widthM: number;
+  /** @deprecated Use widthM instead. Kept for backward compatibility with existing records. */
+  angularWidthDeg?: number;
   distance: number;
+  /** @deprecated Use azimuthDeg instead. Kept for backward compatibility with existing records. */
+  direction?: ObstacleDirection;
 }
 
 export interface PanelGroup {
   name: string;
+  /** Total group Wp = panelWp × numPanels. Kept for PVGIS compat. */
   peakPowerWp: number;
+  /** Wp per individual panel. */
+  panelWp?: number;
+  /** Number of panels in this group. */
+  numPanels?: number;
+  /** How panels are physically mounted on the racking. */
+  panelOrientation?: 'portrait' | 'landscape';
   tilt: number;
   azimuth: number;
   heightFromGround: number;
   obstacles: Obstacle[];
+  /** Physical panel width in cm (short side when portrait). */
+  panelWidthCm?: number;
+  /** Physical panel height in cm (long side when portrait, along the panel surface). */
+  panelHeightCm?: number;
 }
 
 export interface PVGISHourlyRecord {

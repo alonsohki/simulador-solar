@@ -23,9 +23,11 @@ import {
   Autocomplete,
 } from '@mui/material';
 import { Search } from '@mui/icons-material';
-import { ExpandMore, Add, Delete, Edit, WbSunny, MyLocation, Close } from '@mui/icons-material';
+import { ExpandMore, Add, Delete, Edit, WbSunny, MyLocation, Close, OpenInFull } from '@mui/icons-material';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type SolarInstallation, type PanelGroup, type Obstacle, type PVGISGroupData } from '../../db.ts';
+import HorizonView from '../HorizonView.tsx';
+import ObstacleMapView from '../ObstacleMapView.tsx';
 import { fetchPVGISData } from '../../utils/pvgis.ts';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -33,34 +35,42 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 
+// In Vite, Leaflet's internal _getIconUrl overrides mergeOptions unless deleted first
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)['_getIconUrl'];
 L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   iconRetinaUrl: markerIcon2x,
   shadowUrl: markerShadow,
 });
 
+const emptyGroup: PanelGroup = {
+  name: '',
+  panelWp: 400,
+  numPanels: 24,
+  peakPowerWp: 9600,
+  panelOrientation: 'portrait',
+  tilt: 30,
+  azimuth: 0,
+  heightFromGround: 0,
+  obstacles: [],
+  panelWidthCm: 113,
+  panelHeightCm: 170,
+};
+
 const emptyInstallation: Omit<SolarInstallation, 'id'> = {
   name: '',
   latitude: 37.39,
   longitude: -5.99,
   systemLoss: 14,
-  panelGroups: [{ name: 'Grupo 1', peakPowerWp: 9600, tilt: 30, azimuth: 0, heightFromGround: 0, obstacles: [] }],
-};
-
-const emptyGroup: PanelGroup = {
-  name: '',
-  peakPowerWp: 3000,
-  tilt: 30,
-  azimuth: 0,
-  heightFromGround: 0,
-  obstacles: [],
+  panelGroups: [{ ...emptyGroup, name: 'Grupo 1' }],
 };
 
 const emptyObstacle: Obstacle = {
   name: '',
   type: 'solid',
-  height: 1,
-  direction: 'south',
+  height: 3,
+  azimuthDeg: 180,
+  widthM: 5,
   distance: 5,
 };
 
@@ -220,6 +230,7 @@ export default function SolarPanel() {
   const [form, setForm] = useState(emptyInstallation);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [expandedChartsGi, setExpandedChartsGi] = useState<number | null>(null);
 
   const handleOpen = (inst?: SolarInstallation) => {
     if (inst) {
@@ -380,6 +391,7 @@ export default function SolarPanel() {
                   secondary={
                     <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                       <Chip label={`${inst.panelGroups.reduce((s, g) => s + g.peakPowerWp, 0)} Wp`} size="small" />
+                      <Chip label={`${inst.panelGroups.reduce((s, g) => s + (g.numPanels ?? 0), 0)} paneles`} size="small" />
                       <Chip label={`${inst.panelGroups.length} grupos`} size="small" />
                       {inst.pvgisData && <Chip label="PVGIS OK" size="small" color="success" />}
                     </Stack>
@@ -452,6 +464,7 @@ export default function SolarPanel() {
                   <Delete fontSize="small" />
                 </IconButton>
               </Box>
+              {/* Row 1: name, power per panel, num panels, tilt, azimuth */}
               <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 1, mb: 1 }}>
                 <TextField
                   label="Nombre"
@@ -460,11 +473,27 @@ export default function SolarPanel() {
                   size="small"
                 />
                 <TextField
-                  label="Wp"
+                  label="Wp/panel"
                   type="number"
-                  value={group.peakPowerWp}
-                  onChange={(e) => updateGroup(gi, { peakPowerWp: +e.target.value })}
+                  value={group.panelWp ?? ''}
+                  onChange={(e) => {
+                    const wp = +e.target.value || 0;
+                    updateGroup(gi, { panelWp: wp, peakPowerWp: wp * (group.numPanels ?? 1) });
+                  }}
                   size="small"
+                  inputProps={{ step: 10, min: 0 }}
+                  helperText={`Total: ${group.peakPowerWp} Wp`}
+                />
+                <TextField
+                  label="Nº paneles"
+                  type="number"
+                  value={group.numPanels ?? ''}
+                  onChange={(e) => {
+                    const n = +e.target.value || 0;
+                    updateGroup(gi, { numPanels: n, peakPowerWp: (group.panelWp ?? 0) * n });
+                  }}
+                  size="small"
+                  inputProps={{ step: 1, min: 1 }}
                 />
                 <TextField
                   label="Inclinación°"
@@ -480,6 +509,9 @@ export default function SolarPanel() {
                   onChange={(e) => updateGroup(gi, { azimuth: +e.target.value })}
                   size="small"
                 />
+              </Box>
+              {/* Row 2: elevation, panel dimensions, orientation */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 1, mb: 1 }}>
                 <TextField
                   label="Elevación (m)"
                   type="number"
@@ -487,15 +519,49 @@ export default function SolarPanel() {
                   onChange={(e) => updateGroup(gi, { heightFromGround: +e.target.value })}
                   size="small"
                 />
+                <TextField
+                  label="Ancho panel (cm)"
+                  type="number"
+                  value={group.panelWidthCm ?? ''}
+                  onChange={(e) => updateGroup(gi, { panelWidthCm: +e.target.value || undefined })}
+                  size="small"
+                  inputProps={{ step: 1, min: 0 }}
+                  helperText="Lado corto (típ. 113)"
+                />
+                <TextField
+                  label="Alto panel (cm)"
+                  type="number"
+                  value={group.panelHeightCm ?? ''}
+                  onChange={(e) => updateGroup(gi, { panelHeightCm: +e.target.value || undefined })}
+                  size="small"
+                  inputProps={{ step: 1, min: 0 }}
+                  helperText="Lado largo (típ. 170)"
+                />
+                <TextField
+                  label="Orientación"
+                  select
+                  value={group.panelOrientation ?? 'portrait'}
+                  onChange={(e) => updateGroup(gi, { panelOrientation: e.target.value as 'portrait' | 'landscape' })}
+                  size="small"
+                  slotProps={{ select: { native: true } }}
+                >
+                  <option value="portrait">Vertical</option>
+                  <option value="landscape">Horizontal</option>
+                </TextField>
               </Box>
 
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, mb: 0.5, display: 'block' }}>
                 Obstáculos de este grupo
               </Typography>
+              {(group.obstacles ?? []).length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+                  Azimut: N=0°, E=90°, S=180°, O=270° · Anchura: dimensión física del obstáculo
+                </Typography>
+              )}
               {(group.obstacles ?? []).map((obs, oi) => (
                 <Box
                   key={oi}
-                  sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 1, mb: 1, alignItems: 'center' }}
+                  sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto', gap: 1, mb: 1, alignItems: 'center' }}
                 >
                   <TextField
                     label="Nombre"
@@ -504,18 +570,23 @@ export default function SolarPanel() {
                     size="small"
                   />
                   <TextField
-                    label="Dirección"
-                    select
-                    value={obs.direction}
-                    onChange={(e) => updateGroupObstacle(gi, oi, { direction: e.target.value as Obstacle['direction'] })}
+                    label="Azimut°"
+                    type="number"
+                    value={obs.azimuthDeg ?? 180}
+                    onChange={(e) => updateGroupObstacle(gi, oi, { azimuthDeg: +e.target.value })}
                     size="small"
-                    slotProps={{ select: { native: true } }}
-                  >
-                    <option value="north">Norte</option>
-                    <option value="south">Sur</option>
-                    <option value="east">Este</option>
-                    <option value="west">Oeste</option>
-                  </TextField>
+                    inputProps={{ min: 0, max: 359, step: 1 }}
+                    title="N=0°, E=90°, S=180°, O=270°"
+                  />
+                  <TextField
+                    label="Anchura (m)"
+                    type="number"
+                    value={obs.widthM ?? 5}
+                    onChange={(e) => updateGroupObstacle(gi, oi, { widthM: +e.target.value })}
+                    size="small"
+                    inputProps={{ min: 0.1, step: 0.5 }}
+                    title="Anchura física del obstáculo en metros"
+                  />
                   <TextField
                     label="Distancia (m)"
                     type="number"
@@ -551,11 +622,80 @@ export default function SolarPanel() {
               <Button size="small" onClick={() => addGroupObstacle(gi)}>
                 + Añadir obstáculo
               </Button>
+              {(group.obstacles ?? []).length > 0 && (
+                <Box
+                  sx={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 1, mt: 1.5, cursor: 'pointer' }}
+                  onClick={() => setExpandedChartsGi(gi)}
+                  title="Clic para ampliar"
+                >
+                  {/* Map thumbnail */}
+                  <Box
+                    sx={{
+                      border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                      overflow: 'hidden', position: 'relative',
+                      '&:hover .expand-overlay': { opacity: 1 },
+                    }}
+                  >
+                    {(() => {
+                      const isLandscape = group.panelOrientation === 'landscape';
+                      const facingW = isLandscape ? group.panelHeightCm : group.panelWidthCm;
+                      const depthH = isLandscape ? group.panelWidthCm : group.panelHeightCm;
+                      const groupW = ((group.numPanels ?? 1) * (facingW ?? 0)) / 100;
+                      const groupD = (depthH ?? 0) / 100;
+                      return (
+                        <ObstacleMapView
+                          obstacles={group.obstacles ?? []}
+                          panelAzimuth={group.azimuth}
+                          groupWidthM={groupW || undefined}
+                          groupDepthM={groupD || undefined}
+                        />
+                      );
+                    })()}
+                    <Box className="expand-overlay" sx={{
+                      position: 'absolute', inset: 0, bgcolor: 'rgba(0,0,0,0.4)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0, transition: 'opacity 0.15s',
+                    }}>
+                      <OpenInFull sx={{ color: 'white', fontSize: 28 }} />
+                    </Box>
+                  </Box>
+                  {/* Horizon thumbnail */}
+                  <Box
+                    sx={{
+                      border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                      overflow: 'hidden', position: 'relative',
+                      '&:hover .expand-overlay': { opacity: 1 },
+                    }}
+                  >
+                    <HorizonView
+                      obstacles={group.obstacles ?? []}
+                      latitude={form.latitude}
+                      panelHeight={group.heightFromGround}
+                      svgHeight={160}
+                    />
+                    <Box className="expand-overlay" sx={{
+                      position: 'absolute', inset: 0, bgcolor: 'rgba(0,0,0,0.4)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0, transition: 'opacity 0.15s',
+                    }}>
+                      <OpenInFull sx={{ color: 'white', fontSize: 28 }} />
+                    </Box>
+                  </Box>
+                </Box>
+              )}
             </Box>
           ))}
-          <Button size="small" onClick={addGroup}>
-            + Añadir grupo
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+            <Button size="small" onClick={addGroup}>
+              + Añadir grupo
+            </Button>
+            <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+              Total:{' '}
+              <strong>{form.panelGroups.reduce((s, g) => s + g.peakPowerWp, 0).toLocaleString('es-ES')} Wp</strong>
+              {' · '}
+              <strong>{form.panelGroups.reduce((s, g) => s + (g.numPanels ?? 0), 0)}</strong> paneles
+            </Typography>
+          </Box>
 
           <Divider sx={{ my: 2 }} />
           <TextField
@@ -593,6 +733,47 @@ export default function SolarPanel() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Expanded charts dialog */}
+      {expandedChartsGi !== null && (() => {
+        const g = form.panelGroups[expandedChartsGi];
+        if (!g) return null;
+        const isLandscape = g.panelOrientation === 'landscape';
+        const facingW = isLandscape ? g.panelHeightCm : g.panelWidthCm;
+        const depthH = isLandscape ? g.panelWidthCm : g.panelHeightCm;
+        const groupW = ((g.numPanels ?? 1) * (facingW ?? 0)) / 100;
+        const groupD = (depthH ?? 0) / 100;
+        return (
+          <Dialog open onClose={() => setExpandedChartsGi(null)} maxWidth="xl" fullWidth>
+            <DialogTitle>
+              Obstáculos — {g.name || `Grupo ${expandedChartsGi + 1}`}
+              <IconButton onClick={() => setExpandedChartsGi(null)} sx={{ position: 'absolute', right: 8, top: 8 }}>
+                <Close />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 2, alignItems: 'start' }}>
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                  <ObstacleMapView
+                    obstacles={g.obstacles ?? []}
+                    panelAzimuth={g.azimuth}
+                    groupWidthM={groupW || undefined}
+                    groupDepthM={groupD || undefined}
+                  />
+                </Box>
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                  <HorizonView
+                    obstacles={g.obstacles ?? []}
+                    latitude={form.latitude}
+                    panelHeight={g.heightFromGround}
+                    svgHeight={360}
+                  />
+                </Box>
+              </Box>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </>
   );
 }

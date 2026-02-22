@@ -15,7 +15,7 @@ function angleDifference(a: number, b: number): number {
   return Math.abs(diff);
 }
 
-function getSunPosition(
+export function getSunPosition(
   hour: number,
   month: number,
   latitude: number,
@@ -47,41 +47,61 @@ export function calculateShadowFactor(
   month: number,
   latitude: number,
   panelHeight: number = 0,
+  panelPhysicalHeightM: number = 0,
+  panelTiltDeg: number = 30,
 ): number {
   if (obstacles.length === 0) return 1;
 
   const sun = getSunPosition(hour, month, latitude);
   if (!sun) return 1; // sun below horizon, no production anyway
 
+  // Vertical extent of the panel (projection onto vertical plane)
+  const panelHeightVertical = panelPhysicalHeightM * Math.cos(panelTiltDeg * DEG);
+
   let factor = 1;
 
   for (const obstacle of obstacles) {
     if (obstacle.distance <= 0) continue;
 
-    const obstacleAzimuth = DIRECTION_AZIMUTH[obstacle.direction];
+    // Support both new (azimuthDeg) and legacy (direction) fields
+    const obstacleAzimuth =
+      obstacle.azimuthDeg !== undefined
+        ? obstacle.azimuthDeg
+        : DIRECTION_AZIMUTH[obstacle.direction ?? 'south'];
 
-    // Check if sun is in the direction of the obstacle.
-    // Use a 90° window centered on the obstacle azimuth.
-    // Within the window, apply a gradual falloff — obstacles block most
-    // when the sun is directly behind them, less at the edges.
+    // Half-width of the obstacle's angular window
+    // Prefer physical widthM, fallback to legacy angularWidthDeg, then default 45°
+    const widthM = (obstacle.widthM ?? 0);
+    let halfWidth: number;
+    if (widthM > 0 && obstacle.distance > 0) {
+      halfWidth = Math.atan(widthM / 2 / obstacle.distance) * (180 / Math.PI);
+    } else if (obstacle.angularWidthDeg !== undefined) {
+      halfWidth = obstacle.angularWidthDeg / 2;
+    } else {
+      halfWidth = 45;
+    }
+
     const azDiff = angleDifference(sun.azimuth, obstacleAzimuth);
-    if (azDiff > 45) continue;
+    if (azDiff > halfWidth) continue;
 
-    // Effective height accounts for panel elevation
-    const effectiveHeight = obstacle.height - panelHeight;
-    if (effectiveHeight <= 0) continue;
+    // Height where the obstacle's shadow falls at the panel location
+    const H_shadow = obstacle.height - obstacle.distance * Math.tan(sun.elevation * DEG);
+    if (H_shadow <= panelHeight) continue; // shadow misses panel entirely
 
-    const obstacleAngle = Math.atan(effectiveHeight / obstacle.distance) / DEG;
-    if (obstacleAngle > sun.elevation) {
-      // Gradual falloff: full effect when sun is directly behind the obstacle (azDiff=0),
-      // tapering to zero at the edge of the window (azDiff=45).
-      const angularFactor = Math.cos((azDiff / 45) * (Math.PI / 2));
-      if (obstacle.type === 'solid') {
-        factor *= 1 - angularFactor;
-      } else {
-        const transparency = (obstacle.transparencyPercent ?? 50) / 100;
-        factor *= 1 - angularFactor * (1 - transparency);
-      }
+    // Fraction of panel height that is shaded (0 = no shade, 1 = full shade)
+    const shadeFraction =
+      panelHeightVertical === 0
+        ? 1 // no panel dimensions → binary shading (legacy behavior)
+        : Math.min(1, Math.max(0, (H_shadow - panelHeight) / panelHeightVertical));
+
+    // Angular falloff: full effect when sun is directly behind obstacle, tapering to zero at edge
+    const angularFactor = Math.cos((azDiff / halfWidth) * (Math.PI / 2));
+
+    if (obstacle.type === 'solid') {
+      factor *= 1 - shadeFraction * angularFactor;
+    } else {
+      const transparency = (obstacle.transparencyPercent ?? 50) / 100;
+      factor *= 1 - shadeFraction * angularFactor * (1 - transparency);
     }
   }
 
