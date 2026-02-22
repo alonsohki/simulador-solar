@@ -27,7 +27,7 @@ export function buildPVGISUrl(lat: number, lon: number, group: PanelGroup, syste
     peakpower: (group.peakPowerWp / 1000).toString(),
     loss: systemLoss.toString(),
     angle: group.tilt.toString(),
-    aspect: group.azimuth.toString(),
+    aspect: (group.azimuth - 180).toString(), // PVGIS: 0=S, 90=W, -90=E, 180=N; app: 0=N, 180=S
     outputformat: 'json',
     pvcalculation: '1',
   });

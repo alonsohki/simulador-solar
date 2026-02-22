@@ -112,7 +112,9 @@ function ResultRow({
                       <TableRow key={mb.month}>
                         <TableCell>{mb.month}</TableCell>
                         <TableCell align="right">{mb.energyCost.toFixed(2)} €</TableCell>
-                        <TableCell align="right">-{mb.surplusCompensation.toFixed(2)} €</TableCell>
+                        <TableCell align="right">
+                          {mb.surplusCompensation >= 0.005 ? `-${mb.surplusCompensation.toFixed(2)} €` : '—'}
+                        </TableCell>
                         <TableCell align="right">{mb.powerTerm.toFixed(2)} €</TableCell>
                         <TableCell align="right">{mb.meterRental.toFixed(2)} €</TableCell>
                         <TableCell align="right">{mb.electricityTax.toFixed(2)} €</TableCell>

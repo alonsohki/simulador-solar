@@ -292,9 +292,15 @@ export default function AnalysisPage() {
 
       {selectedConsumptionRecords && (
         <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Consumo diario
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, mb: 1 }}>
+            <Typography variant="subtitle1">Consumo diario</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Total:{' '}
+              <strong>
+                {selectedConsumptionRecords.reduce((s, r) => s + r.kwh, 0).toLocaleString('es-ES', { maximumFractionDigits: 0 })} kWh
+              </strong>
+            </Typography>
+          </Box>
           <ConsumptionChart records={selectedConsumptionRecords} />
         </Paper>
       )}
