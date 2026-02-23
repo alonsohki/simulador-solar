@@ -1,7 +1,7 @@
 import type { ConsumptionRecord } from '../db.ts';
-import { detectFormat, CSV_FORMATS } from './csvFormats.ts';
+import { detectFormat, CSV_FORMATS } from './csvFormats.tsx';
 
-export function parseConsumptionCSV(text: string): ConsumptionRecord[] {
+export function parseConsumptionCSV(text: string): { records: ConsumptionRecord[]; formatId: string } {
   const lines = text.trim().split('\n');
   if (lines.length < 2) throw new Error('CSV vacío o sin datos');
 
@@ -36,7 +36,7 @@ export function parseConsumptionCSV(text: string): ConsumptionRecord[] {
   }
 
   if (records.length === 0) throw new Error('No se encontraron registros válidos en el CSV');
-  return records;
+  return { records, formatId: format.id };
 }
 
 export function getConsumptionStats(records: ConsumptionRecord[]) {

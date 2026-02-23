@@ -144,6 +144,7 @@ export interface ConsumptionData {
   id?: number;
   fileName: string;
   importedAt: string;
+  formatId?: string;
   records: ConsumptionRecord[];
 }
 
@@ -208,6 +209,18 @@ export class AppDatabase extends Dexie {
       consumptionData: '++id, fileName',
       pvpcPrices: 'date',
     });
+    this.version(5).stores({
+      solarInstallations: '++id, name',
+      tariffSchedules: '++id, name',
+      companyOffers: '++id, name',
+      batteries: '++id, name',
+      consumptionData: '++id, fileName',
+      pvpcPrices: 'date',
+    }).upgrade((tx) =>
+      tx.table('consumptionData').toCollection().modify((ds) => {
+        if (!ds.formatId) ds.formatId = 'ide';
+      }),
+    );
   }
 }
 
