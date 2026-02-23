@@ -13,6 +13,8 @@ import {
   Box,
   Chip,
   Stack,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import { KeyboardArrowDown, KeyboardArrowUp } from '@mui/icons-material';
 import type { SimulationResult } from '../utils/simulation.ts';
@@ -86,7 +88,7 @@ function ResultRow({
           />
         </TableCell>
         {showVirtualBattery && (
-          <TableCell align="right">
+          <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
             {result.virtualBatteryBalance.toFixed(2)} €
             {result.virtualBatteryBalanceSteadyState !== undefined && (
               <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5, fontStyle: 'italic' }}>
@@ -208,6 +210,9 @@ function computePayback(
 }
 
 export default function SimulationResults({ results, batteries }: Props) {
+  const [chartYear, setChartYear] = useState<1 | 2>(1);
+  const anyHasSteadyState = results.some((r) => r.totalAnnualCostSteadyState !== undefined);
+
   const sorted = [...results].sort((a, b) => a.totalAnnualCost - b.totalAnnualCost);
   const anyHasVirtualBattery = sorted.some((r) => r.virtualBatteryBalance > 0 ||
     r.monthlyBreakdown.some((mb) => mb.virtualBatteryDepositedEuros > 0));
@@ -219,9 +224,23 @@ export default function SimulationResults({ results, batteries }: Props) {
 
   return (
     <Stack spacing={3}>
-      <Typography variant="h6">Resultados de la Simulación</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        <Typography variant="h6" sx={{ flex: 1 }}>Resultados de la Simulación</Typography>
+        {anyHasSteadyState && (
+          <ToggleButtonGroup
+            value={chartYear}
+            exclusive
+            size="small"
+            onChange={(_, v) => { if (v !== null) setChartYear(v as 1 | 2); }}
+            sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1, fontSize: '0.75rem', lineHeight: 1.5 } }}
+          >
+            <ToggleButton value={1}>Año 1</ToggleButton>
+            <ToggleButton value={2}>Año 2</ToggleButton>
+          </ToggleButtonGroup>
+        )}
+      </Box>
 
-      <CostComparisonChart results={sorted} />
+      <CostComparisonChart results={sorted} viewYear={chartYear} />
 
       <TableContainer component={Paper}>
         <Table size="small">

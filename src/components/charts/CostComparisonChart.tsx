@@ -3,9 +3,10 @@ import type { SimulationResult } from '../../utils/simulation.ts';
 
 interface Props {
   results: SimulationResult[];
+  viewYear?: 1 | 2;
 }
 
-export default function CostComparisonChart({ results }: Props) {
+export default function CostComparisonChart({ results, viewYear = 1 }: Props) {
   const months = results[0]?.monthlyBreakdown.map((m) => m.month) ?? [];
 
   const data = months.map((month) => {
@@ -13,7 +14,10 @@ export default function CostComparisonChart({ results }: Props) {
     for (const result of results) {
       const mb = result.monthlyBreakdown.find((m) => m.month === month);
       const label = `${result.offerName} (${result.batteryName})`;
-      entry[label] = mb ? Math.round(mb.total * 100) / 100 : 0;
+      const value = mb
+        ? (viewYear === 2 && mb.totalSteadyState !== undefined ? mb.totalSteadyState : mb.total)
+        : 0;
+      entry[label] = Math.round(value * 100) / 100;
     }
     return entry;
   });
