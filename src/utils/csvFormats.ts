@@ -4,49 +4,65 @@
  * To add a new format, add an entry to CSV_FORMATS with:
  *   - id/name: identifiers for display and error messages
  *   - delimiter: column separator character
- *   - decimalSeparator: ',' (Spanish) or '.' (international)
- *   - dateFormat: how dates are written in the CSV
- *   - hourConvention: '1-24' (Spanish: hora 1 = 00:00-01:00) or '0-23'
- *   - columnMap: mapping from CSV column header -> canonical system column
+ *   - requiredColumns: column names that must appear in the header (used for auto-detection)
+ *   - getDate(cols): returns 'YYYY-MM-DD' from the row's column values, or undefined to skip
+ *   - getHour(cols): returns hour in 1-24 convention, or undefined to skip
+ *   - getKwh(cols):  returns consumption in kWh, or undefined to skip
  *
- * Canonical columns: 'date' | 'hour' | 'kwh'
- * Any CSV columns not listed in columnMap are silently ignored.
+ * `cols` is a Record<string, string> mapping each header name to the raw cell value for that row.
+ * All parsing logic (date formats, decimal separators, splitting combined columns, etc.)
+ * lives inside the callbacks — the parser itself is format-agnostic.
  */
-
-export type CanonicalColumn = 'date' | 'hour' | 'kwh';
 
 export interface CSVFormat {
   id: string;
   name: string;
   delimiter: string;
-  decimalSeparator: ',' | '.';
-  dateFormat: 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY';
-  hourConvention: '1-24' | '0-23';
-  columnMap: Record<string, CanonicalColumn>;
+  requiredColumns: string[];
+  getDate: (cols: Record<string, string>) => string | undefined;
+  getHour: (cols: Record<string, string>) => number | undefined;
+  getKwh:  (cols: Record<string, string>) => number | undefined;
 }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function parseDMY(dateStr: string): string | undefined {
+  const [day, month, year] = dateStr.split('/');
+  if (!day || !month || !year) return undefined;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+function parseEsFloat(value: string): number {
+  return parseFloat(value.replace(',', '.'));
+}
+
+// ── Format definitions ─────────────────────────────────────────────────────
 
 export const CSV_FORMATS: CSVFormat[] = [
   {
     id: 'ide',
     name: 'I-DE (Iberdrola Distribución)',
     delimiter: ';',
-    decimalSeparator: ',',
-    dateFormat: 'DD/MM/YYYY',
-    hourConvention: '1-24',
-    columnMap: {
-      'Fecha': 'date',
-      'Hora': 'hour',
-      'Consumo_kWh': 'kwh',
+    requiredColumns: ['Fecha', 'Hora', 'Consumo_kWh'],
+    getDate: (cols) => parseDMY(cols['Fecha']),
+    getHour: (cols) => {
+      const h = parseInt(cols['Hora'], 10);
+      return isNaN(h) ? undefined : h; // already 1-24
+    },
+    getKwh: (cols) => {
+      const v = parseEsFloat(cols['Consumo_kWh']);
+      return isNaN(v) ? undefined : v;
     },
   },
 ];
 
-/** Detect which format matches the CSV header line. Returns null if none match. */
+// ── Detection ──────────────────────────────────────────────────────────────
+
+/** Returns the first format whose requiredColumns are all present in the header line. */
 export function detectFormat(headerLine: string): CSVFormat | null {
   for (const format of CSV_FORMATS) {
     const cols = headerLine.split(format.delimiter).map((c) => c.trim());
-    const required = Object.keys(format.columnMap);
-    if (required.every((r) => cols.includes(r))) return format;
+    if (format.requiredColumns.every((r) => cols.includes(r))) return format;
   }
   return null;
 }

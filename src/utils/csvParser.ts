@@ -1,20 +1,5 @@
 import type { ConsumptionRecord } from '../db.ts';
-import { detectFormat, CSV_FORMATS, type CanonicalColumn, type CSVFormat } from './csvFormats.ts';
-
-function parseDate(raw: string, format: CSVFormat['dateFormat']): string {
-  switch (format) {
-    case 'DD/MM/YYYY': {
-      const [day, month, year] = raw.split('/');
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    }
-    case 'MM/DD/YYYY': {
-      const [month, day, year] = raw.split('/');
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    }
-    case 'YYYY-MM-DD':
-      return raw;
-  }
-}
+import { detectFormat, CSV_FORMATS } from './csvFormats.ts';
 
 export function parseConsumptionCSV(text: string): ConsumptionRecord[] {
   const lines = text.trim().split('\n');
@@ -29,11 +14,6 @@ export function parseConsumptionCSV(text: string): ConsumptionRecord[] {
   }
 
   const headers = headerLine.split(format.delimiter).map((h) => h.trim());
-  const colIndex: Partial<Record<CanonicalColumn, number>> = {};
-  for (const [csvName, canonical] of Object.entries(format.columnMap)) {
-    colIndex[canonical] = headers.indexOf(csvName);
-  }
-
   const records: ConsumptionRecord[] = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -41,20 +21,16 @@ export function parseConsumptionCSV(text: string): ConsumptionRecord[] {
     if (!line) continue;
 
     const parts = line.split(format.delimiter);
+    const cols: Record<string, string> = {};
+    for (let j = 0; j < headers.length; j++) {
+      cols[headers[j]] = parts[j]?.trim() ?? '';
+    }
 
-    const dateRaw = colIndex.date !== undefined ? parts[colIndex.date]?.trim() : undefined;
-    const hourRaw = colIndex.hour !== undefined ? parts[colIndex.hour]?.trim() : undefined;
-    const kwhRaw = colIndex.kwh !== undefined ? parts[colIndex.kwh]?.trim() : undefined;
+    const date = format.getDate(cols);
+    const hour = format.getHour(cols);
+    const kwh  = format.getKwh(cols);
 
-    if (!dateRaw || !hourRaw || !kwhRaw) continue;
-
-    const date = parseDate(dateRaw, format.dateFormat);
-    let hour = parseInt(hourRaw, 10);
-    if (isNaN(hour)) continue;
-    if (format.hourConvention === '0-23') hour += 1; // normalise to 1-24
-
-    const kwh = parseFloat(kwhRaw.replace(',', '.'));
-    if (isNaN(kwh)) continue;
+    if (!date || hour === undefined || kwh === undefined) continue;
 
     records.push({ date, hour, kwh });
   }
